@@ -9,7 +9,8 @@ import os
 
 st.set_page_config(page_title="Official Trade Analysis", layout="wide")
 
-st.title("📊 Official Trade History Analysis (Hyperliquid Export)")
+st.markdown("### 📊 Trading Agent Performance Dashboard")
+st.caption("Hyperliquid Export Analysis")
 
 # Load Data
 @st.cache_data
@@ -100,6 +101,98 @@ col2.metric("Gross PnL", f"${total_gross_pnl:.2f}")
 col3.metric("Total Fees", f"${total_fees:.2f}")
 col4.metric("Total Trades", total_trades)
 
+# Detailed Performance Metrics
+st.markdown("##### 📊 Performance Metrics")
+
+# Calculate metrics
+initial_balance = 476.66  # From equity_curve.csv
+total_return_net = total_net_pnl
+total_return_gross = total_gross_pnl
+return_pct_net = (total_return_net / initial_balance * 100) if initial_balance > 0 else 0
+return_pct_gross = (total_return_gross / initial_balance * 100) if initial_balance > 0 else 0
+
+# Sharpe Ratio calculation (both net and gross)
+returns_net = filtered_df['netPnl'].values
+returns_gross = filtered_df['grossPnl'].values
+sharpe_ratio_net = (returns_net.mean() / returns_net.std() * (252 ** 0.5)) if returns_net.std() > 0 else 0
+sharpe_ratio_gross = (returns_gross.mean() / returns_gross.std() * (252 ** 0.5)) if returns_gross.std() > 0 else 0
+
+# Profit Factor (both net and gross)
+winning_trades_net = filtered_df[filtered_df['netPnl'] > 0]
+losing_trades_net = filtered_df[filtered_df['netPnl'] < 0]
+winning_trades_gross = filtered_df[filtered_df['grossPnl'] > 0]
+losing_trades_gross = filtered_df[filtered_df['grossPnl'] < 0]
+
+gross_profit_net = winning_trades_net['netPnl'].sum()
+gross_loss_net = abs(losing_trades_net['netPnl'].sum())
+profit_factor_net = (gross_profit_net / gross_loss_net) if gross_loss_net > 0 else 0
+
+gross_profit_gross = winning_trades_gross['grossPnl'].sum()
+gross_loss_gross = abs(losing_trades_gross['grossPnl'].sum())
+profit_factor_gross = (gross_profit_gross / gross_loss_gross) if gross_loss_gross > 0 else 0
+
+# Max Drawdown (both net and gross) - Relative to Initial Balance
+# Calculate equity curves (initial balance + cumulative PnL)
+equity_net = initial_balance + filtered_df['cum_net_pnl'].values
+equity_gross = initial_balance + filtered_df['cum_gross_pnl'].values
+
+# Net Max Drawdown (relative to initial balance)
+min_equity_net = equity_net.min()
+max_drawdown_usd_net = min_equity_net - initial_balance
+max_drawdown_pct_net = (max_drawdown_usd_net / initial_balance * 100) if initial_balance > 0 else 0
+
+# Gross Max Drawdown (relative to initial balance)
+min_equity_gross = equity_gross.min()
+max_drawdown_usd_gross = min_equity_gross - initial_balance
+max_drawdown_pct_gross = (max_drawdown_usd_gross / initial_balance * 100) if initial_balance > 0 else 0
+
+# Direction Analysis
+long_trades = filtered_df[filtered_df['dir'].str.contains('Long', na=False)]
+short_trades = filtered_df[filtered_df['dir'].str.contains('Short', na=False)]
+long_wins = len(long_trades[long_trades['netPnl'] > 0])
+short_wins = len(short_trades[short_trades['netPnl'] > 0])
+long_accuracy = (long_wins / len(long_trades) * 100) if len(long_trades) > 0 else 0
+short_accuracy = (short_wins / len(short_trades) * 100) if len(short_trades) > 0 else 0
+
+# Total Volume
+total_volume = (filtered_df['sz'] * filtered_df['px']).sum()
+
+# Display metrics in organized sections with smaller text
+col_a, col_b, col_c, col_d = st.columns(4)
+
+with col_a:
+    st.markdown("#### 📊 NET METRICS")
+    st.markdown(f"**Return:** ${total_return_net:.2f} ({return_pct_net:.1f}%)")
+    st.markdown(f"**Sharpe:** {sharpe_ratio_net:.2f}")
+    st.markdown(f"**Profit Factor:** {profit_factor_net:.2f}")
+    st.markdown(f"**Max DD:** ${max_drawdown_usd_net:.2f} ({max_drawdown_pct_net:.1f}%)")
+    st.markdown(f"**Win Rate:** {len(winning_trades_net) / total_trades * 100:.1f}%" if total_trades > 0 else "0%")
+
+with col_b:
+    st.markdown("#### 💎 GROSS METRICS")
+    st.markdown(f"**Return:** ${total_return_gross:.2f} ({return_pct_gross:.1f}%)")
+    st.markdown(f"**Sharpe:** {sharpe_ratio_gross:.2f}")
+    st.markdown(f"**Profit Factor:** {profit_factor_gross:.2f}")
+    st.markdown(f"**Max DD:** ${max_drawdown_usd_gross:.2f} ({max_drawdown_pct_gross:.1f}%)")
+    st.markdown(f"**Fees Impact:** ${total_fees:.2f}")
+
+with col_c:
+    st.markdown("#### 📈 ACTIVITY")
+    st.markdown(f"**Total Trades:** {total_trades}")
+    st.markdown(f"**Positions:** {len(filtered_df[filtered_df['dir'].str.contains('Open', na=False)])}")
+    st.markdown(f"**Volume:** ${total_volume:,.0f}")
+    st.markdown(f"**Avg Size:** ${total_volume / total_trades:,.0f}" if total_trades > 0 else "$0")
+    st.markdown(f"**Win/Loss:** {len(winning_trades_net)}/{len(losing_trades_net)}")
+
+with col_d:
+    st.markdown("#### 🎯 DIRECTION")
+    st.markdown(f"**Long:** {len(long_trades)} ({long_accuracy:.1f}%)")
+    st.markdown(f"**Short:** {len(short_trades)} ({short_accuracy:.1f}%)")
+    st.markdown(f"**Avg Win:** ${gross_profit_net / len(winning_trades_net) if len(winning_trades_net) > 0 else 0:.2f}")
+    st.markdown(f"**Avg Loss:** ${gross_loss_net / len(losing_trades_net) if len(losing_trades_net) > 0 else 0:.2f}")
+
+st.markdown("---")
+
 # Charts
 st.subheader("📈 Cumulative PnL Over Time")
 fig_cum = go.Figure()
@@ -123,6 +216,24 @@ if selected_coin:
     if not coin_data.empty:
         # Create Dual Axis Chart
         fig_analysis = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # Match Open-Close pairs
+        open_positions = {}  # Track open positions by direction
+        trade_pairs = []  # Store (open_row, close_row) pairs
+        
+        for idx, row in coin_data.iterrows():
+            if 'Open' in row['dir']:
+                # Store open position
+                direction = 'Long' if 'Long' in row['dir'] else 'Short'
+                if direction not in open_positions:
+                    open_positions[direction] = []
+                open_positions[direction].append(row)
+            elif 'Close' in row['dir']:
+                # Match with corresponding open
+                direction = 'Long' if 'Long' in row['dir'] else 'Short'
+                if direction in open_positions and len(open_positions[direction]) > 0:
+                    open_row = open_positions[direction].pop(0)  # FIFO matching
+                    trade_pairs.append((open_row, row))
         
         # Determine Colors and Sizes
         # Open Long -> Blue, Open Short -> Orange (no PnL, fixed small size)
@@ -170,6 +281,33 @@ if selected_coin:
             ),
             secondary_y=False
         )
+        
+        # Add connecting lines for Open-Close pairs
+        for open_row, close_row in trade_pairs:
+            line_color = 'green' if close_row['closedPnl'] > 0 else 'red'
+            line_width = min(1 + abs(close_row['closedPnl']) / max_pnl_abs * 3, 4)  # Width 1-4
+            
+            # Calculate hold duration
+            hold_duration = (pd.to_datetime(close_row['time']) - pd.to_datetime(open_row['time'])).total_seconds() / 60
+            
+            fig_analysis.add_trace(
+                go.Scatter(
+                    x=[open_row['time'], close_row['time']],
+                    y=[open_row['px'], close_row['px']],
+                    mode='lines',
+                    line=dict(color=line_color, width=line_width, dash='solid'),
+                    opacity=0.4,
+                    showlegend=False,
+                    hovertemplate=f"<b>Trade Pair</b><br>" +
+                                 f"Open: {open_row['dir']} @ ${open_row['px']:.2f}<br>" +
+                                 f"Close: {close_row['dir']} @ ${close_row['px']:.2f}<br>" +
+                                 f"PnL: ${close_row['closedPnl']:.2f}<br>" +
+                                 f"Hold: {hold_duration:.1f} min<br>" +
+                                 f"Price Change: {((close_row['px'] - open_row['px']) / open_row['px'] * 100):.2f}%<extra></extra>",
+                    hoverinfo='text'
+                ),
+                secondary_y=False
+            )
         
         # Add Trade Markers (colored with size variation)
         fig_analysis.add_trace(
