@@ -62,7 +62,7 @@ def load_data(file_paths):
 
 # Sidebar File Selection
 st.sidebar.header("Data Selection")
-available_files = glob.glob("trade_history_*.csv")
+available_files = glob.glob("agent_*.csv")
 selected_files = st.sidebar.multiselect("Select Data Files", options=available_files, default=available_files)
 
 df = load_data(selected_files)
@@ -70,10 +70,8 @@ df = load_data(selected_files)
 if df.empty:
     st.stop()
 
-# Sidebar Filters
-st.sidebar.header("Filters")
-coins = st.sidebar.multiselect("Select Coins", options=df['coin'].unique(), default=df['coin'].unique())
-filtered_df = df[df['coin'].isin(coins)]
+# Use all data without filtering
+filtered_df = df
 
 # Key Metrics
 total_gross_pnl = filtered_df['grossPnl'].sum()
