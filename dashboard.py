@@ -65,6 +65,21 @@ st.sidebar.header("Data Selection")
 available_files = glob.glob("agent_*.csv")
 selected_files = st.sidebar.multiselect("Select Data Files", options=available_files, default=available_files)
 
+# Display Agent Prompts
+st.sidebar.header("📝 Agent Prompts")
+for csv_file in selected_files:
+    # Get corresponding .txt file
+    txt_file = csv_file.replace('.csv', '.txt')
+    if os.path.exists(txt_file):
+        agent_name = os.path.basename(csv_file).replace('.csv', '')
+        with st.sidebar.expander(f"🤖 {agent_name}"):
+            try:
+                with open(txt_file, 'r', encoding='utf-8') as f:
+                    prompt_content = f.read()
+                st.code(prompt_content, language='text')
+            except Exception as e:
+                st.error(f"Error reading {txt_file}: {e}")
+
 df = load_data(selected_files)
 
 if df.empty:
@@ -109,17 +124,34 @@ if selected_coin:
         # Create Dual Axis Chart
         fig_analysis = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # Determine Colors and Hover Text
-        # Buy (Open Long, Close Short) -> Green
-        # Sell (Open Short, Close Long) -> Red
-        colors = coin_data['dir'].apply(lambda x: 'green' if 'Long' in x and 'Open' in x or 'Short' in x and 'Close' in x else 'red')
+        # Determine Colors and Sizes
+        # Open Long -> Blue, Open Short -> Orange (no PnL, fixed small size)
+        # Close Long/Short -> Green (profit) or Red (loss), size based on PnL magnitude
         
-        # Determine Marker Size based on PnL Magnitude
-        # Base size 6, max size 30. Scaled by relative PnL magnitude.
-        max_pnl_abs = coin_data['closedPnl'].abs().max()
-        if max_pnl_abs == 0: max_pnl_abs = 1 # Avoid division by zero
+        def get_color(row):
+            if 'Open' in row['dir']:
+                # Open positions: Blue for Long, Orange for Short
+                return 'blue' if 'Long' in row['dir'] else 'orange'
+            else:
+                # Close positions: Green for profit, Red for loss
+                return 'green' if row['closedPnl'] > 0 else 'red'
         
-        sizes = coin_data['closedPnl'].abs().apply(lambda x: 6 + (x / max_pnl_abs) * 24)
+        colors = coin_data.apply(get_color, axis=1)
+        
+        # Determine Marker Size
+        # Open positions: fixed small size (6)
+        # Close positions: scaled by PnL magnitude (6-30)
+        close_trades = coin_data[coin_data['dir'].str.contains('Close', na=False)]
+        max_pnl_abs = close_trades['closedPnl'].abs().max() if not close_trades.empty else 1
+        if max_pnl_abs == 0: max_pnl_abs = 1
+        
+        def get_size(row):
+            if 'Open' in row['dir']:
+                return 6  # Fixed small size for Open
+            else:
+                return 6 + (abs(row['closedPnl']) / max_pnl_abs) * 24  # Scaled for Close
+        
+        sizes = coin_data.apply(get_size, axis=1)
         
         hover_text = coin_data.apply(lambda row: f"<b>{row['dir']}</b><br>" +
                                                  f"Price: ${row['px']:.4f}<br>" +
@@ -128,13 +160,23 @@ if selected_coin:
                                                  f"Fee: ${row['fee']:.2f}<br>" +
                                                  f"Time: {row['time']}", axis=1)
 
-        # Add Trade Price Line (using execution price from logs)
+        # Add Price Line (gray, no markers)
         fig_analysis.add_trace(
             go.Scatter(x=coin_data['time'], y=coin_data['px'], 
-                    mode='lines+markers', 
-                    name=f"{selected_coin} Trade Price",
-                    marker=dict(color=colors, size=sizes, line=dict(width=1, color='DarkSlateGrey')),
+                    mode='lines', 
+                    name=f"{selected_coin} Price",
                     line=dict(color='gray', width=1, dash='dot'),
+                    hoverinfo='skip'
+            ),
+            secondary_y=False
+        )
+        
+        # Add Trade Markers (colored with size variation)
+        fig_analysis.add_trace(
+            go.Scatter(x=coin_data['time'], y=coin_data['px'], 
+                    mode='markers', 
+                    name='Trades',
+                    marker=dict(color=colors, size=sizes, line=dict(width=1, color='DarkSlateGrey')),
                     text=hover_text,
                     hoverinfo='text'
             ),
@@ -157,6 +199,16 @@ if selected_coin:
         )
         
         st.plotly_chart(fig_analysis, use_container_width=True)
+        
+        # Legend Explanation
+        st.markdown("""
+        **📊 Chart Legend:**
+        - 🔵 **Blue** = Open Long (entry point, small marker)
+        - 🟠 **Orange** = Open Short (entry point, small marker)
+        - 🟢 **Green** = Close with Profit (marker size = profit amount)
+        - 🔴 **Red** = Close with Loss (marker size = loss amount)
+        - **Marker Size**: Larger markers indicate bigger PnL (profit or loss)
+        """)
         
         st.info("Note: Price data is based on your trade execution prices, not external market data. This ensures it matches your simulation timeframe.")
     else:
