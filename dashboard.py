@@ -131,20 +131,29 @@ gross_profit_gross = winning_trades_gross['grossPnl'].sum()
 gross_loss_gross = abs(losing_trades_gross['grossPnl'].sum())
 profit_factor_gross = (gross_profit_gross / gross_loss_gross) if gross_loss_gross > 0 else 0
 
-# Max Drawdown (both net and gross) - Relative to Initial Balance
-# Calculate equity curves (initial balance + cumulative PnL)
+# Max Drawdown (both net and gross) - Standard Point-by-Point Method
+# Step 1: Calculate equity curves (initial balance + cumulative PnL)
 equity_net = initial_balance + filtered_df['cum_net_pnl'].values
 equity_gross = initial_balance + filtered_df['cum_gross_pnl'].values
 
-# Net Max Drawdown (relative to initial balance)
-min_equity_net = equity_net.min()
-max_drawdown_usd_net = min_equity_net - initial_balance
-max_drawdown_pct_net = (max_drawdown_usd_net / initial_balance * 100) if initial_balance > 0 else 0
+# Step 2: Calculate running maximum (历史最高值)
+running_max_net = pd.Series(equity_net).expanding().max().values
+running_max_gross = pd.Series(equity_gross).expanding().max().values
 
-# Gross Max Drawdown (relative to initial balance)
-min_equity_gross = equity_gross.min()
-max_drawdown_usd_gross = min_equity_gross - initial_balance
-max_drawdown_pct_gross = (max_drawdown_usd_gross / initial_balance * 100) if initial_balance > 0 else 0
+# Step 3: Calculate drawdown at each point (当前回撤)
+# 当前回撤 = (当前净值 - 历史最高值) / 历史最高值
+drawdown_pct_net = (equity_net - running_max_net) / running_max_net
+drawdown_pct_gross = (equity_gross - running_max_gross) / running_max_gross
+
+# Step 4: Find maximum drawdown (最小值，即绝对值最大)
+max_drawdown_pct_net = drawdown_pct_net.min() * 100  # Convert to percentage
+max_drawdown_pct_gross = drawdown_pct_gross.min() * 100
+
+# Calculate USD amount at the point of max drawdown
+max_dd_idx_net = drawdown_pct_net.argmin()
+max_dd_idx_gross = drawdown_pct_gross.argmin()
+max_drawdown_usd_net = equity_net[max_dd_idx_net] - running_max_net[max_dd_idx_net]
+max_drawdown_usd_gross = equity_gross[max_dd_idx_gross] - running_max_gross[max_dd_idx_gross]
 
 # Direction Analysis
 long_trades = filtered_df[filtered_df['dir'].str.contains('Long', na=False)]
